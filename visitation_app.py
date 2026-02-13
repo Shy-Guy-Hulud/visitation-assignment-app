@@ -3,14 +3,14 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 1. Page Config (Best to have this at the very top)
-st.set_page_config(page_title="Visitation Portal", page_icon="👤")
+st.set_page_config(page_title="Visitation App", page_icon="👤")
 
 # --- 1. SESSION STATE & LOGIN ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    st.title("🔐 Visitation Portal")
+    st.title("🔐 Visitation App")
     with st.form("login_form"):
         pwd_input = st.text_input("Enter Access Code", type="password")
         if st.form_submit_button("Login"):
