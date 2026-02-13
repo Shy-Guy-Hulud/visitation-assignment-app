@@ -51,7 +51,7 @@ names = sorted(list(set(
 )))
 
 # --- 3. MAIN UI ---
-st.title("📋 Visitation Portal")
+st.title("📋 Visitation App")
 
 # Main Navigation Menu
 user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + names)
@@ -59,10 +59,10 @@ user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + name
 if user_name != "-- Select Name --":
     st.divider()
 
-    # Step 2: Present Menu Options based on that User
+    # Step 2: Present THREE Menu Options
     menu_choice = st.radio(
         f"Hi {user_name}, what would you like to do?",
-        ["View My Assignments", "View Scheduled Visitations"],
+        ["View My Assignments", "View Scheduled Visitations", "Assign officers (leadership)"],
         horizontal=True
     )
 
@@ -144,67 +144,127 @@ if user_name != "-- Select Name --":
         else:
             st.info("No active assignments found for you at this time.")
 
-# Option 2: Scheduled Visitations
-    else:
-        if user_name != "-- Select Name --":
+    # Option 2: Scheduled Visitations
+    elif menu_choice == "View Scheduled Visitations":
+        st.subheader("🗓️ Upcoming Scheduled Visitations")
 
-            st.subheader("🗓️ Upcoming Scheduled Visitations")
+        # Filter rows where Column J (index 9) is not empty
+        scheduled = [row for row in all_rows[4:] if len(row) > 9 and row[9].strip() != ""]
 
-            # Filter rows where Column J (index 9) is not empty
-            scheduled = [row for row in all_rows[4:] if len(row) > 9 and row[9].strip() != ""]
+        if not scheduled:
+            st.info("No visitations are currently scheduled.")
+        else:
+            header_row = all_rows[3]
+            officer_names = [header_row[i] for i in range(11, 19)]
+            col_letters = ["L", "M", "N", "O", "P", "Q", "R", "S"]
+            officer_cols = dict(zip(officer_names, col_letters))
 
-            if not scheduled:
-                st.info("No visitations are currently scheduled.")
-            else:
-                header_row = all_rows[3]
-                officer_names = [header_row[i] for i in range(11, 19)]
-                col_letters = ["L", "M", "N", "O", "P", "Q", "R", "S"]
-                officer_cols = dict(zip(officer_names, col_letters))
+            for row in scheduled:
+                row_number = all_rows.index(row) + 1
 
-                for row in scheduled:
-                    row_number = all_rows.index(row) + 1
+                # --- DEFINE VARIABLES FIRST ---
+                first_name = row[1] if len(row) > 1 else ""
+                last_name = row[0] if len(row) > 0 else ""
+                full_name = f"{first_name} {last_name}".strip()
 
-                    # --- DEFINE VARIABLES FIRST ---
-                    first_name = row[1] if len(row) > 1 else ""
-                    last_name = row[0] if len(row) > 0 else ""
-                    full_name = f"{first_name} {last_name}".strip()
+                address = row[4] if len(row) > 4 else "No Address"
+                visit_date = row[9]  # Column J
+                visit_time = row[10] if len(row) > 10 else "TBD"  # Column K
 
-                    address = row[4] if len(row) > 4 else "No Address"
-                    visit_date = row[9]  # Column J
-                    visit_time = row[10] if len(row) > 10 else "TBD"  # Column K
+                with st.container(border=True):
+                    st.markdown(f"### 👤 {full_name}")
+                    # Now visit_date and visit_time are defined and ready to go
+                    st.write(f"📅 **Date:** {visit_date}    ⏰ **Time:** {visit_time}")
+                    st.write(f"📍 **Location:** {address}")
 
-                    with st.container(border=True):
-                        st.markdown(f"### 👤 {full_name}")
-                        # Now visit_date and visit_time are defined and ready to go
-                        st.write(f"📅 **Date:** {visit_date}    ⏰ **Time:** {visit_time}")
-                        st.write(f"📍 **Location:** {address}")
+                    # Attendance Check
+                    attending = [all_rows[3][i] for i in range(11, 19) if len(row) > i and row[i].upper() == 'TRUE']
+                    if attending:
+                        st.success(f"👥 **Attending:** {', '.join(attending)}")
+                    else:
+                        st.caption("No officers have responded yet.")
 
-                        # Attendance Check
-                        attending = [all_rows[3][i] for i in range(11, 19) if len(row) > i and row[i].upper() == 'TRUE']
-                        if attending:
-                            st.success(f"👥 **Attending:** {', '.join(attending)}")
+                    # RSVP Section
+                    st.divider()
+                    if user_name in officer_names:
+                        col_letter = officer_cols.get(user_name)
+                        if user_name not in attending:
+
+                            st.caption(f"💡 Click the button below if you can make the visitation for **{full_name}**")
+
+                            if st.button(f"🙋‍♂️ I can attend ({full_name})", key=f"rsvp_{row_number}"):
+                                client = get_sheet_client()
+                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+                                sheet.update_acell(f"{col_letter}{row_number}", "TRUE")
+                                st.success("RSVP Saved!")
+                                st.cache_data.clear()
+                                st.rerun()
                         else:
-                            st.caption("No officers have responded yet.")
+                            st.button(f"✅ You are attending ({full_name})", disabled=True, key=f"done_{row_number}")
+                    else:
+                        st.warning("You are not listed in the attendance columns (L-S).")
 
-                        # RSVP Section
-                        st.divider()
-                        if user_name in officer_names:
-                            col_letter = officer_cols.get(user_name)
-                            if user_name not in attending:
+    # Option 3: ASSIGN OFFICERS (LEADER TOOL) ---
+    else:
+        st.subheader("🛠️ Set Assignments (leadership only)")
 
-                                st.caption(f"💡 Click the button below if you can make the visitation for **{full_name}**")
+        # Filter: Only include rows where Column T (index 19) is 'YES'
+        all_members = [
+            row for row in all_rows[4:]
+            if len(row) > 19 and row[19].strip().upper() == "YES"
+        ]
 
-                                if st.button(f"🙋‍♂️ I can attend ({full_name})", key=f"rsvp_{row_number}"):
-                                    client = get_sheet_client()
-                                    sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
-                                    sheet.update_acell(f"{col_letter}{row_number}", "TRUE")
-                                    st.success("RSVP Saved!")
+        if not all_members:
+            st.info("No members are currently marked for assignment in the 'Assign Helper' column.")
+        else:
+            # 1. Calculate workload summary ONLY for the filtered set
+            assignment_counts = {}
+            for row in all_members:
+                current_off = row[6].strip() if len(row) > 6 else ""
+                if current_off:
+                    assignment_counts[current_off] = assignment_counts.get(current_off, 0) + 1
+
+            if assignment_counts:
+                with st.expander("📊 How many are assigned per officer"):
+                    for off, count in sorted(assignment_counts.items(), key=lambda x: x[1], reverse=True):
+                        st.write(f"**{off}**: {count} assignments")
+
+            st.divider()
+
+            # 2. Display the filtered list for reassignment
+            for row in all_members:
+                row_number = all_rows.index(row) + 1
+                full_name = f"{row[1]} {row[0]}".strip()
+                current_officer = row[6].strip() if len(row) > 6 else ""
+
+                with st.container(border=True):
+                    col_info, col_action = st.columns([1.5, 1])
+                    with col_info:
+                        st.markdown(f"### {full_name}")
+                        st.caption(f"📍 Currently: **{current_officer if current_officer else 'Unassigned'}**")
+
+                    with col_action:
+                        try:
+                            default_index = names.index(current_officer) + 1 if current_officer in names else 0
+                        except ValueError:
+                            default_index = 0
+
+                        new_assignment = st.selectbox(
+                            "Change Assignment:",
+                            options=["-- Select --"] + names,
+                            index=default_index,
+                            key=f"reassign_{row_number}"
+                        )
+
+                        if new_assignment != current_officer and new_assignment != "-- Select --":
+                            if st.button("Update Assignment", key=f"upd_btn_{row_number}"):
+                                client = get_sheet_client()
+                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+                                with st.spinner(f"Updating {full_name}..."):
+                                    sheet.update_acell(f"G{row_number}", new_assignment)
+                                    st.success("Updated!")
                                     st.cache_data.clear()
                                     st.rerun()
-                            else:
-                                st.button(f"✅ You are attending ({full_name})", disabled=True, key=f"done_{row_number}")
-                        else:
-                            st.warning("You are not listed in the attendance columns (L-S).")
 
 # --- 4. EXTERNAL LINK SECTION ---
 st.divider()
