@@ -69,8 +69,8 @@ if user_name != "-- Select Name --":
             row_number = all_rows.index(row) + 1
 
             # Mapping
-            first_name = row[0] if len(row) > 0 else ""
-            last_name = row[1] if len(row) > 1 else ""
+            first_name = row[1] if len(row) > 1 else ""  # Now pulling from Column B
+            last_name = row[0] if len(row) > 0 else ""  # Now pulling from Column A
             full_name = f"{first_name} {last_name}".strip()
             dob = row[2] if len(row) > 2 and row[2].strip() != "" else "N/A"
             anniversary = row[3] if len(row) > 3 and row[3].strip() != "" else "N/A"
@@ -107,14 +107,14 @@ if user_name != "-- Select Name --":
                     st.warning("⚪ **Not Started:** 0 attempts completed.")
 
                 # 4. Log Visit Section
-                with st.expander("📝 Log a Member Contact"):
+                with st.expander("📝 Log a Visitation Attempt"):
                     attempt_choice = st.selectbox(
                         "Which attempt did you complete?",
                         options=["-- Select --", "Try #1", "Try #2"],
                         key=f"status_{row_number}"
                     )
 
-                    if st.button(f"Confirm Visit for {full_name}", key=f"btn_{row_number}"):
+                    if st.button(f"Confirm attempt for {full_name}", key=f"btn_{row_number}"):
                         if attempt_choice == "-- Select --":
                             st.warning("Please select an attempt number.")
                         else:
