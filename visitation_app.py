@@ -10,14 +10,19 @@ if "authenticated" not in st.session_state:
 # --- 2. PASSWORD CHECK ---
 if not st.session_state["authenticated"]:
     st.title("🔐 Secure Access")
-    pwd_input = st.text_input("Enter Password", type="password")
-    if st.button("Login"):
-        if pwd_input == st.secrets["APP_PASSWORD"]:
-            st.session_state["authenticated"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    st.stop()  # Stop execution here if not logged in
+
+    # Wrap the input in a form to enable "Enter" to submit
+    with st.form("login_form"):
+        pwd_input = st.text_input("Enter Password", type="password")
+        submit_button = st.form_submit_button("Login")
+
+        if submit_button:
+            if pwd_input == st.secrets["APP_PASSWORD"]:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+    st.stop()
 
 # --- 3. CONFIG & DATA (Only runs if logged in) ---
 st.set_page_config(page_title="Officer Assignments", page_icon="📋")
