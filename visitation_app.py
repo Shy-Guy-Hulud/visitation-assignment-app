@@ -54,22 +54,24 @@ names = sorted(list(set(
 st.title("📋 Visitation Portal")
 
 # Main Navigation Menu
-menu_choice = st.radio(
-    "What would you like to do?",
-    ["View My Assignments", "View Scheduled Visitations"],
-    horizontal=True
-)
+user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + names)
 
-st.divider()
+if user_name != "-- Select Name --":
+    st.divider()
 
-# Option 1: View Assignments
-if menu_choice == "View My Assignments":
-    user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + names)
+    # Step 2: Present Menu Options based on that User
+    menu_choice = st.radio(
+        f"Hi {user_name}, what would you like to do?",
+        ["View My Assignments", "View Scheduled Visitations"],
+        horizontal=True
+    )
 
-    if user_name != "-- Select Name --":
+    st.divider()
+
+    # --- OPTION 1: PERSONAL ASSIGNMENTS ---
+    if menu_choice == "View My Assignments":
         st.subheader(f"Assignments for {user_name}")
 
-        # Filter rows for the selected officer
         my_assignments = [
             row for row in all_rows[4:]
             if len(row) > 6 and row[6].strip().lower() == user_name.lower()
@@ -77,10 +79,9 @@ if menu_choice == "View My Assignments":
 
         if my_assignments:
             for row in my_assignments:
-                # Calculate real row number (Data starts on Row 1, index 0)
                 row_number = all_rows.index(row) + 1
 
-                # Corrected Mapping: row[1] is First Name, row[0] is Last Name
+                # Corrected Mapping (First Last)
                 first_name = row[1] if len(row) > 1 else ""
                 last_name = row[0] if len(row) > 0 else ""
                 full_name = f"{first_name} {last_name}".strip()
@@ -145,71 +146,60 @@ if menu_choice == "View My Assignments":
 
 # Option 2: Scheduled Visitations
 else:
-    st.subheader("🗓️ Upcoming Scheduled Visitations")
-    user_name = st.selectbox("Choose your name in the drop down", options=["-- Select Name --"] + names)
+    if user_name != "-- Select Name --":
 
-    # Filter rows where Column J (index 9) is not empty
-    scheduled = [row for row in all_rows[4:] if len(row) > 9 and row[9].strip() != ""]
+        st.subheader("🗓️ Upcoming Scheduled Visitations")
 
-    if not scheduled:
-        st.info("No visitations are currently scheduled.")
-    else:
-        # 1. Get officer names and column mapping dynamically from Row 4 (index 3)
-        header_row = all_rows[3]
-        officer_names = [header_row[i] for i in range(11, 19)]
-        col_letters = ["L", "M", "N", "O", "P", "Q", "R", "S"]
-        officer_cols = dict(zip(officer_names, col_letters))
+        # Filter rows where Column J (index 9) is not empty
+        scheduled = [row for row in all_rows[4:] if len(row) > 9 and row[9].strip() != ""]
 
-        for row in scheduled:
-            # Calculate the specific row in the master spreadsheet
-            row_number = all_rows.index(row) + 1
+        if not scheduled:
+            st.info("No visitations are currently scheduled.")
+        else:
+            header_row = all_rows[3]
+            officer_names = [header_row[i] for i in range(11, 19)]
+            col_letters = ["L", "M", "N", "O", "P", "Q", "R", "S"]
+            officer_cols = dict(zip(officer_names, col_letters))
 
-            # Name formatting: First (row[1]) Last (row[0])
-            first_name = row[1] if len(row) > 1 else ""
-            last_name = row[0] if len(row) > 0 else ""
-            full_name = f"{first_name} {last_name}".strip()
+            for row in scheduled:
+                row_number = all_rows.index(row) + 1
 
-            address = row[4] if len(row) > 4 else "No Address"
-            visit_date = row[9]
-            visit_time = row[10] if len(row) > 10 else "TBD"
+                # --- DEFINE VARIABLES FIRST ---
+                first_name = row[1] if len(row) > 1 else ""
+                last_name = row[0] if len(row) > 0 else ""
+                full_name = f"{first_name} {last_name}".strip()
 
-            with st.container(border=True):
-                st.markdown(f"### 👤 {full_name}")
-                st.write(f"📅 **Date:** {visit_date}    ⏰ **Time:** {visit_time}")
-                st.write(f"📍 **Location:** {address}")
+                address = row[4] if len(row) > 4 else "No Address"
+                visit_date = row[9]  # Column J
+                visit_time = row[10] if len(row) > 10 else "TBD"  # Column K
 
-                # Check who is attending
-                attending = []
-                for i in range(11, 19):
-                    if len(row) > i and row[i].upper() == 'TRUE':
-                        attending.append(all_rows[3][i])
+                with st.container(border=True):
+                    st.markdown(f"### 👤 {full_name}")
+                    # Now visit_date and visit_time are defined and ready to go
+                    st.write(f"📅 **Date:** {visit_date}    ⏰ **Time:** {visit_time}")
+                    st.write(f"📍 **Location:** {address}")
 
-                if attending:
-                    st.success(f"👥 **Attending:** {', '.join(attending)}")
-                else:
-                    st.caption("No officers have responded yet.")
+                    # Attendance Check
+                    attending = [all_rows[3][i] for i in range(11, 19) if len(row) > i and row[i].upper() == 'TRUE']
+                    if attending:
+                        st.success(f"👥 **Attending:** {', '.join(attending)}")
+                    else:
+                        st.caption("No officers have responded yet.")
 
-                # --- NEW: INDIVIDUAL RSVP SECTION PER MEMBER ---
-                if user_name != "-- Select Name --":
+                    # RSVP Section
                     st.divider()
-                    st.markdown(f"**Click the button below if you can attend**")  # Makes it obvious which member this is for
-
                     if user_name in officer_names:
                         col_letter = officer_cols.get(user_name)
-                        is_already_rsved = user_name in attending
-
-                        if not is_already_rsved:
-                            # Using 'f"rsvp_{row_number}"' ensures every button is unique
-                            if st.button(f"🙋‍♂️ I can attend ({full_name})", key=f"rsvp_btn_{row_number}"):
+                        if user_name not in attending:
+                            if st.button(f"🙋‍♂️ I can attend ({full_name})", key=f"rsvp_{row_number}"):
                                 client = get_sheet_client()
                                 sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
                                 sheet.update_acell(f"{col_letter}{row_number}", "TRUE")
-                                st.success(f"Confirmed for {full_name}!")
+                                st.success("RSVP Saved!")
                                 st.cache_data.clear()
                                 st.rerun()
                         else:
-                            st.button(f"✅ You are attending for {full_name}", disabled=True,
-                                      key=f"done_btn_{row_number}")
+                            st.button(f"✅ You are attending ({full_name})", disabled=True, key=f"done_{row_number}")
                     else:
                         st.warning("You are not listed in the attendance columns (L-S).")
 
