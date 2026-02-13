@@ -3,14 +3,14 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # 1. Page Config (Best to have this at the very top)
-st.set_page_config(page_title="Officer Portal", page_icon="👤")
+st.set_page_config(page_title="Visitation Portal", page_icon="👤")
 
 # --- 1. SESSION STATE & LOGIN ---
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    st.title("🔐 Officer Portal")
+    st.title("🔐 Visitation Portal")
     with st.form("login_form"):
         pwd_input = st.text_input("Enter Access Code", type="password")
         if st.form_submit_button("Login"):
@@ -51,7 +51,7 @@ names = sorted(list(set(
 )))
 
 # --- 3. MAIN UI ---
-st.title("📋 Officer Portal")
+st.title("📋 Visitation Portal")
 
 # Main Navigation Menu
 menu_choice = st.radio(
