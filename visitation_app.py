@@ -88,6 +88,7 @@ if user_name != "-- Select Name --":
 
                 dob = row[2] if len(row) > 2 and row[2].strip() != "" else "N/A"
                 anniversary = row[3] if len(row) > 3 and row[3].strip() != "" else "N/A"
+                last_visited = row[20] if len(row) > 20 and row[20].strip() != "" else None
                 address_for_map = row[4] if len(row) > 4 else ""
                 phone = row[5] if len(row) > 5 else "N/A"
 
@@ -99,6 +100,10 @@ if user_name != "-- Select Name --":
                     # 1. Header and Dates
                     st.markdown(f"### 👤 {full_name}")
                     st.markdown(f"🎂 **DOB:** {dob}    💍 **Married:** {anniversary}")
+
+                    # Display Last Visited only if it exists
+                    if last_visited:
+                        st.info(f"🕒 **Last Visited:** {last_visited}")
 
                     # 2. Action Buttons (Phone & Maps)
                     col1, col2 = st.columns(2)
@@ -141,6 +146,37 @@ if user_name != "-- Select Name --":
                                     st.success("Updated!")
                                     st.cache_data.clear()
                                     st.rerun()
+                    # --- NEW: SCHEDULE VISITATION SECTION ---
+                    with st.expander("📅 Schedule a Future Visitation"):
+                        st.write(
+                            f"Have you been able to schedule a visitation for **{full_name}**? If so, enter the details below:")
+
+                        col_d, col_t = st.columns(2)
+                        with col_d:
+                            # 'format' changes how it looks in the app
+                            v_date = st.date_input(
+                                "Select Date",
+                                key=f"date_in_{row_number}",
+                                format="MM/DD/YYYY"
+                            )
+                        with col_t:
+                            v_time = st.time_input("Select Time", key=f"time_in_{row_number}")
+
+                        if st.button("Save Schedule", key=f"sched_btn_{row_number}"):
+                            client = get_sheet_client()
+                            sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+
+                            # Format for the Google Sheet (MM/DD/YYYY)
+                            date_str = v_date.strftime("%m/%d/%Y")
+                            time_str = v_time.strftime("%I:%M %p")
+
+                            with st.spinner("Saving to spreadsheet..."):
+                                sheet.update_acell(f"J{row_number}", date_str)
+                                sheet.update_acell(f"K{row_number}", time_str)
+
+                                st.success(f"Scheduled for {date_str} at {time_str}!")
+                                st.cache_data.clear()
+                                st.rerun()
         else:
             st.info("No active assignments found for you at this time.")
 
@@ -235,12 +271,16 @@ if user_name != "-- Select Name --":
             for row in all_members:
                 row_number = all_rows.index(row) + 1
                 full_name = f"{row[1]} {row[0]}".strip()
+                last_visited = row[20] if len(row) > 20 and row[20].strip() != "" else None
                 current_officer = row[6].strip() if len(row) > 6 else ""
 
                 with st.container(border=True):
                     col_info, col_action = st.columns([1.5, 1])
                     with col_info:
                         st.markdown(f"### {full_name}")
+                        # Show Last Visited if available
+                        if last_visited:
+                            st.write(f"🕒 **Last Visited:** {last_visited}")
                         st.caption(f"📍 Currently: **{current_officer if current_officer else 'Unassigned'}**")
 
                     with col_action:
