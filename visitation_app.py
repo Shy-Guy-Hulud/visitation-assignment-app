@@ -23,16 +23,24 @@ if not st.session_state["authenticated"]:
 
 
 # --- 2. DATA FETCHING ---
-@st.cache_data(ttl=600)  # Refreshes every 10 mins
-def get_sheet_data():
+@st.cache_data(ttl=600)
+def get_sheet_data(tab_name):
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
     client = gspread.authorize(creds)
-    sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+    sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(tab_name)
     return sheet.get_all_values()
 
+# Load a default tab just to get the list of names for the dropdown
+# We use February as the "starter" data
+all_rows = get_sheet_data("02 - FEB")
 
-all_rows = get_sheet_data()
+# This generates the names list for the very first dropdown
+names = sorted(list(set(
+    row[6].strip()
+    for row in all_rows[4:]
+    if len(row) > 6 and row[6].strip() != ""
+)))
 
 @st.cache_resource
 def get_sheet_client():
@@ -57,6 +65,19 @@ st.title("📋 Visitation App")
 user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + names)
 
 if user_name != "-- Select Name --":
+    # --- NEW: MONTH SELECTION ---
+    month_options = {
+        "February": "02 - FEB",
+        "March": "03 - MAR",
+        "April": "04 - APR"
+    }
+
+    selected_month_label = st.selectbox("Which month are you viewing?", options=list(month_options.keys()))
+    target_tab = month_options[selected_month_label]
+
+    # FETCH DATA FOR THE SPECIFIC TAB
+    all_rows = get_sheet_data(target_tab)
+
     st.divider()
 
     # Step 2: Present THREE Menu Options
