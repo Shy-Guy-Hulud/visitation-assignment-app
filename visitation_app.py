@@ -1,6 +1,18 @@
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+import datetime
+import requests
+
+def send_telegram_message(message, chat_id):
+    """Sends a notification via your existing Telegram bot."""
+    token = st.secrets["TELEGRAM_TOKEN"] # Updated key
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        st.error(f"Failed to send Telegram notification: {e}")
 
 # 1. Page Config (Best to have this at the very top)
 st.set_page_config(page_title="Visitation App", page_icon="👤")
@@ -23,19 +35,37 @@ if not st.session_state["authenticated"]:
 
 
 # --- 2. DATA FETCHING ---
+@st.cache_resource
+def get_tab_names():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
+    client = gspread.authorize(creds)
+    spreadsheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk")
+    # Get all worksheet titles
+    return [sh.title for sh in spreadsheet.worksheets()]
+
 @st.cache_data(ttl=600)
 def get_sheet_data(tab_name):
+    # (Existing code to fetch all_rows)
     scopes = ["https://www.googleapis.com/auth/spreadsheets"]
     creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
     client = gspread.authorize(creds)
     sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(tab_name)
     return sheet.get_all_values()
 
-# Load a default tab just to get the list of names for the dropdown
-# We use February as the "starter" data
-all_rows = get_sheet_data("02 - FEB")
+# --- INITIAL LOAD ---
+available_tabs = get_tab_names()
+# Filter out administrative tabs
+hidden_tabs = ["Monthly Template", "Roster"]
+# This list now ONLY contains tabs that actually exist in your sheet right now
+month_list = [t for t in available_tabs if t not in hidden_tabs]
 
-# This generates the names list for the very first dropdown
+# Load current month as default (Feb)
+current_month_name = datetime.datetime.now().strftime("%B")
+all_rows = get_sheet_data(current_month_name if current_month_name in month_list else month_list[0])
+
+# (Names list logic follows...)
+
 names = sorted(list(set(
     row[6].strip()
     for row in all_rows[4:]
@@ -65,17 +95,22 @@ st.title("📋 Visitation App")
 user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + names)
 
 if user_name != "-- Select Name --":
-    # --- NEW: MONTH SELECTION ---
-    month_options = {
-        "February": "02 - FEB",
-        "March": "03 - MAR",
-        "April": "04 - APR"
-    }
+    # --- ADMIN NOTIFICATION ---
+    if f"notified_{user_name}" not in st.session_state:
+        admin_id = st.secrets["DEFAULT_CHAT_ID"] # Updated key
+        send_telegram_message(f"🚀 **App Activity:** {user_name} has logged into the Visitation Portal.", admin_id)
+        st.session_state[f"notified_{user_name}"] = True
+    # --- END ADMIN NOTIFICATION ---
 
-    selected_month_label = st.selectbox("Which month are you viewing?", options=list(month_options.keys()))
-    target_tab = month_options[selected_month_label]
+    # 1. Dynamic Month Selector
+    try:
+        current_month_idx = month_list.index(current_month_name)
+    except ValueError:
+        current_month_idx = 0
 
-    # FETCH DATA FOR THE SPECIFIC TAB
+    target_tab = st.selectbox("Select Month to View", options=month_list, index=current_month_idx)
+
+    # 2. Re-fetch data based on selection
     all_rows = get_sheet_data(target_tab)
 
     st.divider()
@@ -159,7 +194,7 @@ if user_name != "-- Select Name --":
                                 st.warning("Please select an attempt number.")
                             else:
                                 client = get_sheet_client()
-                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(target_tab)
                                 col_to_update = "H" if attempt_choice == "Try #1" else "I"
 
                                 with st.spinner("Updating spreadsheet..."):
@@ -185,7 +220,7 @@ if user_name != "-- Select Name --":
 
                         if st.button("Save Schedule", key=f"sched_btn_{row_number}"):
                             client = get_sheet_client()
-                            sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+                            sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(target_tab)
 
                             # Format for the Google Sheet (MM/DD/YYYY)
                             date_str = v_date.strftime("%m/%d/%Y")
@@ -251,7 +286,7 @@ if user_name != "-- Select Name --":
 
                             if st.button(f"🙋‍♂️ I can attend ({full_name})", key=f"rsvp_{row_number}"):
                                 client = get_sheet_client()
-                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(target_tab)
                                 sheet.update_acell(f"{col_letter}{row_number}", "TRUE")
                                 st.success("RSVP Saved!")
                                 st.cache_data.clear()
@@ -261,45 +296,78 @@ if user_name != "-- Select Name --":
                     else:
                         st.warning("You are not listed in the attendance columns (L-S).")
 
-    # Option 3: ASSIGN OFFICERS (LEADER TOOL) ---
+    # --- OPTION 3: ASSIGN OFFICERS ---
     else:
-        st.subheader("🛠️ Set Assignments (leadership only)")
+        st.subheader("🛠️ Leader Tool: Assignment Distribution")
 
-        # Filter: Only include rows where Column T (index 19) is 'YES'
         all_members = [
             row for row in all_rows[4:]
-            if len(row) > 19 and row[19].strip().upper() == "YES"
+            if len(row) > 19 and str(row[19]).strip().upper() == "YES"
         ]
 
         if not all_members:
-            st.info("No members are currently marked for assignment in the 'Assign Helper' column.")
+            st.warning("⚠️ No members found. Ensure Column T is 'YES' in the spreadsheet.")
         else:
-            # 1. Calculate workload summary ONLY for the filtered set
-            assignment_counts = {}
-            for row in all_members:
-                current_off = row[6].strip() if len(row) > 6 else ""
-                if current_off:
-                    assignment_counts[current_off] = assignment_counts.get(current_off, 0) + 1
+            # --- 1. BATCH NOTIFICATION SECTION ---
+            st.info("Assign everyone first, then use the button below to notify all officers.")
 
-            if assignment_counts:
-                with st.expander("📊 How many are assigned per officer"):
-                    for off, count in sorted(assignment_counts.items(), key=lambda x: x[1], reverse=True):
-                        st.write(f"**{off}**: {count} assignments")
+            with st.container(border=True):
+                col_notif, col_switch = st.columns([2, 1])
+                with col_switch:
+                    confirm_all = st.toggle("Unlock Batch Notify", key="unlock_top")
+                with col_notif:
+                    if st.button("📢 Send New Assignments via Telegram", disabled=not confirm_all,
+                                 type="primary", use_container_width=True):
+
+                        officer_map = st.secrets["USER_MAP"]
+                        notified_count = 0
+                        summary = {}
+
+                        # Loop 1: Just gather data for the messages
+                        for row in all_members:
+                            off = row[6].strip().title() if len(row) > 6 else ""
+                            member_name = f"{row[1]} {row[0]}".strip()
+
+                            if off in officer_map:
+                                if off not in summary: summary[off] = []
+                                summary[off].append(member_name)
+
+                        # Loop 2: Send the grouped messages
+                        for off, assigned_members in summary.items():
+                            # The URL of your web app
+                            app_url = "https://visitation-assignment-app.streamlit.app/"
+
+                            # Constructing the clean Markdown message
+                            msg = (
+                                f"📋 **{target_tab} Visitation Assignments**\n\n"
+                                f"To see your assignments, [click here]({app_url})"
+                            )
+
+                            send_telegram_message(msg, officer_map[off])
+                            notified_count += 1
+
+                        # SUCCESS MESSAGE: Now safely inside the button logic
+                        st.success(f"Sent summaries to {notified_count} officers!")
 
             st.divider()
 
-            # 2. Display the filtered list for reassignment
+            # --- 2. INDIVIDUAL MEMBER CARDS SECTION ---
+            # Loop 3: Create the UI cards
             for row in all_members:
-                row_number = all_rows.index(row) + 1
-                full_name = f"{row[1]} {row[0]}".strip()
-                last_visited = row[20] if len(row) > 20 and row[20].strip() != "" else None
+                row_idx = all_rows.index(row)
+                row_number = row_idx + 1
+                unique_key = f"{target_tab}_{row_number}"
+
+                first_name = row[1] if len(row) > 1 else ""
+                last_name = row[0] if len(row) > 0 else ""
+                full_name = f"{first_name} {last_name}".strip()
                 current_officer = row[6].strip() if len(row) > 6 else ""
+                last_visited = row[20] if len(row) > 20 and row[20].strip() != "" else None
 
                 with st.container(border=True):
                     col_info, col_action = st.columns([1.5, 1])
                     with col_info:
                         st.markdown(f"### {full_name}")
-                        # Show Last Visited if available
                         if last_visited:
                             st.write(f"🕒 **Last Visited:** {last_visited}")
                         st.caption(f"📍 Currently: **{current_officer if current_officer else 'Unassigned'}**")
@@ -311,16 +379,17 @@ if user_name != "-- Select Name --":
                             default_index = 0
 
                         new_assignment = st.selectbox(
-                            "Change Assignment:",
+                            "Assign:",
                             options=["-- Select --"] + names,
                             index=default_index,
-                            key=f"reassign_{row_number}"
+                            key=f"reassign_{unique_key}"
                         )
 
                         if new_assignment != current_officer and new_assignment != "-- Select --":
-                            if st.button("Update Assignment", key=f"upd_btn_{row_number}"):
+                            if st.button("Update Sheet", key=f"upd_btn_{unique_key}"):
                                 client = get_sheet_client()
-                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").sheet1
+                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(
+                                    target_tab)
                                 with st.spinner(f"Updating {full_name}..."):
                                     sheet.update_acell(f"G{row_number}", new_assignment)
                                     st.success("Updated!")
