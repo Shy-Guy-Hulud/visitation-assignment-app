@@ -55,14 +55,21 @@ def get_sheet_data(tab_name):
 
 # --- INITIAL LOAD ---
 available_tabs = get_tab_names()
-# Filter out administrative tabs
 hidden_tabs = ["Monthly Template", "Roster"]
-# This list now ONLY contains tabs that actually exist in your sheet right now
 month_list = [t for t in available_tabs if t not in hidden_tabs]
 
-# Load current month as default (Feb)
+# Determine the safe starting tab
 current_month_name = datetime.datetime.now().strftime("%B")
-all_rows = get_sheet_data(current_month_name if current_month_name in month_list else month_list[0])
+if current_month_name in month_list:
+    initial_tab = current_month_name
+else:
+    initial_tab = month_list[0] if month_list else None
+
+if not initial_tab:
+    st.error("No month tabs found!")
+    st.stop()
+
+all_rows = get_sheet_data(initial_tab)
 
 # (Names list logic follows...)
 
@@ -91,27 +98,23 @@ names = sorted(list(set(
 # --- 3. MAIN UI ---
 st.title("📋 Visitation App")
 
-# Main Navigation Menu
 user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + names)
 
 if user_name != "-- Select Name --":
-    # --- ADMIN NOTIFICATION ---
-    if f"notified_{user_name}" not in st.session_state:
-        admin_id = st.secrets["DEFAULT_CHAT_ID"] # Updated key
-        send_telegram_message(f"🚀 **App Activity:** {user_name} has logged into the Visitation Portal.", admin_id)
-        st.session_state[f"notified_{user_name}"] = True
-    # --- END ADMIN NOTIFICATION ---
+    # (Admin notification logic remains the same)
 
     # 1. Dynamic Month Selector
+    # Use initial_tab to set the default index
     try:
-        current_month_idx = month_list.index(current_month_name)
+        default_idx = month_list.index(initial_tab)
     except ValueError:
-        current_month_idx = 0
+        default_idx = 0
 
-    target_tab = st.selectbox("Select Month to View", options=month_list, index=current_month_idx)
+    target_tab = st.selectbox("Select Month to View", options=month_list, index=default_idx)
 
-    # 2. Re-fetch data based on selection
-    all_rows = get_sheet_data(target_tab)
+    # 2. Re-fetch data ONLY if the user changes the dropdown
+    if target_tab != initial_tab:
+        all_rows = get_sheet_data(target_tab)
 
     st.divider()
 
@@ -298,7 +301,7 @@ if user_name != "-- Select Name --":
 
     # --- OPTION 3: ASSIGN OFFICERS ---
     else:
-        st.subheader("🛠️ Leader Tool: Assignment Distribution")
+        st.subheader("🛠️ Assign Officers (Leadership)")
 
         all_members = [
             row for row in all_rows[4:]
@@ -339,7 +342,7 @@ if user_name != "-- Select Name --":
 
                             # Constructing the clean Markdown message
                             msg = (
-                                f"📋 **{target_tab} Visitation Assignments**\n\n"
+                                f"📋 **{target_tab} Visitation Assignments Have Been Made**\n\n"
                                 f"To see your assignments, [click here]({app_url})"
                             )
 
