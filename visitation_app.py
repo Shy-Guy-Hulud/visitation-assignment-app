@@ -219,23 +219,64 @@ if user_name != "-- Select Name --":
                                 format="MM/DD/YYYY"
                             )
                         with col_t:
-                            v_time = st.time_input("Select Time", key=f"time_in_{row_number}")
+                            # 1. Generate a clean list of 30-minute increments
+                            time_options = []
+                            periods = ["AM", "PM"]
+                            # We'll use 12, then 1-11 to keep the standard clock order
+                            hours = [12] + list(range(1, 12))
+
+                            for period in periods:
+                                for hour in hours:
+                                    # format to 2 digits for cleaner look, e.g., "01:00 PM"
+                                    h_str = str(hour).zfill(2)
+                                    time_options.append(f"{h_str}:00 {period}")
+                                    time_options.append(f"{h_str}:30 {period}")
+
+                            # 2. Let the user pick from the list
+                            # Setting index 26 usually lands on 01:00 PM
+                            selected_time_str = st.selectbox(
+                                "Select Time",
+                                options=time_options,
+                                index=26 if len(time_options) > 26 else 0,
+                                key=f"time_select_{row_number}"
+                            )
 
                         if st.button("Save Schedule", key=f"sched_btn_{row_number}"):
                             client = get_sheet_client()
-                            sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(target_tab)
+                            sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(
+                                target_tab)
 
-                            # Format for the Google Sheet (MM/DD/YYYY)
+                            # Format for the Google Sheet
                             date_str = v_date.strftime("%m/%d/%Y")
-                            time_str = v_time.strftime("%I:%M %p")
+                            # FIX: Use the string from the selectbox directly
+                            time_str = selected_time_str
 
                             with st.spinner("Saving to spreadsheet..."):
                                 sheet.update_acell(f"J{row_number}", date_str)
                                 sheet.update_acell(f"K{row_number}", time_str)
 
-                                st.success(f"Scheduled for {date_str} at {time_str}!")
+                                # --- UPDATED: NOTIFY ALL OFFICERS INDIVIDUALLY ---
+                                app_url = "https://visitation-assignment-app.streamlit.app/"
+                                officer_map = st.secrets["USER_MAP"]
+
+                                notification_msg = (
+                                    f"📅 **New Visitation Scheduled!**\n\n"
+                                    f"A visitation has been scheduled for **{full_name}** on {date_str} at {time_str}.\n\n"
+                                    f"Please click the link below to let everyone know if you can attend:\n"
+                                    f"{app_url}"
+                                )
+
+                                # This loops through every officer in your secrets and sends a DM
+                                for off_name, chat_id in officer_map.items():
+                                    try:
+                                        send_telegram_message(notification_msg, chat_id)
+                                    except Exception as e:
+                                        st.error(f"Could not notify {off_name}: {e}")
+
+                                st.success(f"Scheduled and all officers notified!")
                                 st.cache_data.clear()
                                 st.rerun()
+                        st.caption("⚠️ **FYI:** Clicking the button above will immediately notify the rest of the officers via Telegram.")
         else:
             st.info("No active assignments found for you at this time.")
 
