@@ -4,6 +4,9 @@ from google.oauth2.service_account import Credentials
 import datetime
 import requests
 
+# --- CONSTANTS ---
+SPREADSHEET_ID = "1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk"
+
 def send_telegram_message(message, chat_id):
     """Sends a notification via your existing Telegram bot."""
     token = st.secrets["TELEGRAM_TOKEN"] # Updated key
@@ -36,21 +39,37 @@ if not st.session_state["authenticated"]:
 
 # --- 2. DATA FETCHING ---
 @st.cache_resource
+def get_sheet_client():
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    # Load the dictionary from secrets
+    creds_info = dict(st.secrets["google_credentials"])
+
+    # Ensure the private key handles newlines correctly regardless of TOML format
+    if "private_key" in creds_info:
+        creds_info["private_key"] = creds_info["private_key"].replace("\\n", "\n")
+
+    creds = Credentials.from_service_account_info(creds_info, scopes=scopes)
+    return gspread.authorize(creds)
+
+@st.cache_resource
 def get_tab_names():
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
-    client = gspread.authorize(creds)
-    spreadsheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk")
-    # Get all worksheet titles
+    client = get_sheet_client()
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
     return [sh.title for sh in spreadsheet.worksheets()]
 
 @st.cache_data(ttl=600)
 def get_sheet_data(tab_name):
-    # (Existing code to fetch all_rows)
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(tab_name)
+    # Use the helper function to get an authorized client
+    client = get_sheet_client()
+
+    # Open the specific spreadsheet and worksheet
+    spreadsheet = client.open_by_key(SPREADSHEET_ID)
+    sheet = spreadsheet.worksheet(tab_name)
+
     return sheet.get_all_values()
 
 # --- INITIAL LOAD ---
@@ -79,21 +98,6 @@ names = sorted(list(set(
     if len(row) > 6 and row[6].strip() != ""
 )))
 
-@st.cache_resource
-def get_sheet_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds = Credentials.from_service_account_info(st.secrets["google_credentials"], scopes=scopes)
-    return gspread.authorize(creds)
-
-# Get list of officers for the dropdown
-names = sorted(list(set(
-    row[6].strip()
-    for row in all_rows[4:]
-    if len(row) > 6 and row[6].strip() != ""
-)))
 
 # --- 3. MAIN UI ---
 st.title("📋 Visitation App")
@@ -101,7 +105,12 @@ st.title("📋 Visitation App")
 user_name = st.selectbox("Who is viewing?", options=["-- Select Name --"] + names)
 
 if user_name != "-- Select Name --":
-    # (Admin notification logic remains the same)
+    # --- ADMIN NOTIFICATION (RESTORED) ---
+    # Only notify if the user is NOT you and hasn't been notified this session
+    if user_name != "Carlos" and f"notified_{user_name}" not in st.session_state:
+        admin_id = st.secrets["DEFAULT_CHAT_ID"]
+        send_telegram_message(f"🚀 **App Activity:** {user_name} has logged into the Visitation Portal.", admin_id)
+        st.session_state[f"notified_{user_name}"] = True
 
     # 1. Dynamic Month Selector
     # Use initial_tab to set the default index
@@ -197,7 +206,7 @@ if user_name != "-- Select Name --":
                                 st.warning("Please select an attempt number.")
                             else:
                                 client = get_sheet_client()
-                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(target_tab)
+                                sheet = client.open_by_key(SPREADSHEET_ID).worksheet(target_tab)
                                 col_to_update = "H" if attempt_choice == "Try #1" else "I"
 
                                 with st.spinner("Updating spreadsheet..."):
@@ -243,7 +252,7 @@ if user_name != "-- Select Name --":
 
                         if st.button("Save Schedule", key=f"sched_btn_{row_number}"):
                             client = get_sheet_client()
-                            sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(
+                            sheet = client.open_by_key(SPREADSHEET_ID).worksheet(
                                 target_tab)
 
                             # Format for the Google Sheet
@@ -330,7 +339,7 @@ if user_name != "-- Select Name --":
 
                             if st.button(f"🙋‍♂️ I can attend ({full_name})", key=f"rsvp_{row_number}"):
                                 client = get_sheet_client()
-                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(target_tab)
+                                sheet = client.open_by_key(SPREADSHEET_ID).worksheet(target_tab)
                                 sheet.update_acell(f"{col_letter}{row_number}", "TRUE")
                                 st.success("RSVP Saved!")
                                 st.cache_data.clear()
@@ -432,7 +441,7 @@ if user_name != "-- Select Name --":
                         if new_assignment != current_officer and new_assignment != "-- Select --":
                             if st.button("Update Sheet", key=f"upd_btn_{unique_key}"):
                                 client = get_sheet_client()
-                                sheet = client.open_by_key("1i3Q9ff1yA3mTLJJS8-u8vcW3cz-B7envmThxijfyWTk").worksheet(
+                                sheet = client.open_by_key(SPREADSHEET_ID).worksheet(
                                     target_tab)
                                 with st.spinner(f"Updating {full_name}..."):
                                     sheet.update_acell(f"G{row_number}", new_assignment)
