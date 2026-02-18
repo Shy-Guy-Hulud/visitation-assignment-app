@@ -318,9 +318,16 @@ if user_name != "-- Select Name --":
 
                 with st.container(border=True):
                     st.markdown(f"### 👤 {full_name}")
-                    # Now visit_date and visit_time are defined and ready to go
+
+                    # Display Date and Time as plain text
                     st.write(f"📅 **Date:** {visit_date}    ⏰ **Time:** {visit_time}")
-                    st.write(f"📍 **Location:** {address}")
+
+                    # Create the clickable Google Maps URL
+                    # We use address.replace(' ', '+') to make the URL web-safe
+                    maps_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
+
+                    # Display the address as a blue hyperlink
+                    st.markdown(f"📍 **Location:** [{address}]({maps_url})")
 
                     # Attendance Check
                     attending = [all_rows[3][i] for i in range(11, 19) if len(row) > i and row[i].upper() == 'TRUE']
