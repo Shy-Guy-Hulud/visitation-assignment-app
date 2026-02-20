@@ -293,11 +293,27 @@ if user_name != "-- Select Name --":
     elif menu_choice == "View Scheduled Visitations":
         st.subheader("🗓️ Upcoming Scheduled Visitations")
 
-        # Filter rows where Column J (index 9) is not empty
-        scheduled = [row for row in all_rows[4:] if len(row) > 9 and row[9].strip() != ""]
+        # 1. Get today's date for comparison
+        today = datetime.date.today()
+
+        # 2. Filter rows where Column J (index 9) is not empty AND is NOT in the past
+        scheduled = []
+        for row in all_rows[4:]:
+            if len(row) > 9 and row[9].strip() != "":
+                date_str = row[9].strip()
+                try:
+                    # Convert spreadsheet string "MM/DD/YYYY" to a date object
+                    visit_date_obj = datetime.datetime.strptime(date_str, "%m/%d/%Y").date()
+
+                    # ONLY include if the date is today or in the future
+                    if visit_date_obj >= today:
+                        scheduled.append(row)
+                except ValueError:
+                    # This skips rows with invalid date formats so the app doesn't crash
+                    continue
 
         if not scheduled:
-            st.info("No visitations are currently scheduled.")
+            st.info("No upcoming visitations scheduled. (Past visits are hidden)")
         else:
             header_row = all_rows[3]
             officer_names = [header_row[i] for i in range(11, 19)]
