@@ -75,29 +75,40 @@ def get_sheet_data(tab_name):
 # --- INITIAL LOAD ---
 available_tabs = get_tab_names()
 hidden_tabs = ["Monthly Template", "Roster"]
-month_list = [t for t in available_tabs if t not in hidden_tabs]
+# Filter out hidden tabs AND any tab that starts with "Archive"
+month_list = [t for t in available_tabs if t not in hidden_tabs and not t.startswith("Archive")]
 
 # Determine the safe starting tab
-current_month_name = datetime.datetime.now().strftime("%B")
-if current_month_name in month_list:
-    initial_tab = current_month_name
+now = datetime.datetime.now()
+current_month = now.strftime("%B")            # e.g., "February"
+next_month = (now.replace(day=28) + datetime.timedelta(days=4)).strftime("%B") # e.g., "March"
+
+if current_month in month_list:
+    initial_tab = current_month
+elif next_month in month_list:
+    initial_tab = next_month
 else:
+    # Fallback to the first non-hidden, non-archived tab
     initial_tab = month_list[0] if month_list else None
 
 if not initial_tab:
-    st.error("No month tabs found!")
+    st.error("No active month tabs found! Please ensure your month tab (e.g., 'March') is not named 'Archive'.")
     st.stop()
 
 all_rows = get_sheet_data(initial_tab)
 
 # (Names list logic follows...)
 
-names = sorted(list(set(
-    row[6].strip()
-    for row in all_rows[4:]
-    if len(row) > 6 and row[6].strip() != ""
-)))
-
+names = [
+    "Ana",
+    "Bobbie",
+    "Carlos",
+    "Jasmynne",
+    "Jestoni",
+    "Johnny",
+    "Julie",
+    "Kim"
+]
 
 # --- 3. MAIN UI ---
 st.title("📋 Visitation App")
