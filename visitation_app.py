@@ -72,6 +72,20 @@ def get_sheet_data(tab_name):
 
     return sheet.get_all_values()
 
+# NEW: Function to build the Area-Group Lookup Dictionary
+@st.cache_data(ttl=3600)
+def get_area_group_map():
+    """Returns a dictionary mapping 'First Last' names to their 'AREA-GROUP' from the Roster."""
+    roster_rows = get_sheet_data("Roster")
+    # Assuming Column A is Last Name, Column B is First Name, Column L is Area-Group (index 11)
+    mapping = {}
+    for row in roster_rows[1:]: # Skip header
+        if len(row) >= 12:
+            full_name = f"{row[1]} {row[0]}".strip().lower()
+            area_group = row[11] # Column L
+            mapping[full_name] = area_group
+    return mapping
+
 # --- INITIAL LOAD ---
 available_tabs = get_tab_names()
 hidden_tabs = ["Monthly Template", "Roster"]
@@ -147,9 +161,12 @@ if user_name != "-- Select Name --":
 
     st.divider()
 
-    # --- OPTION 1: PERSONAL ASSIGNMENTS ---
+    # --- OPTION 1: PERSONAL ASSIGNMENTS (WITH AREA-GROUP UPDATE) ---
     if menu_choice == "View My Assignments":
         st.subheader(f"Assignments for {user_name}")
+
+        # Ensure the area map is loaded here so the variable is always defined
+        area_map = get_area_group_map()
 
         my_assignments = [
             row for row in all_rows[4:]
@@ -160,10 +177,13 @@ if user_name != "-- Select Name --":
             for row in my_assignments:
                 row_number = all_rows.index(row) + 1
 
-                # Corrected Mapping (First Last)
                 first_name = row[1] if len(row) > 1 else ""
                 last_name = row[0] if len(row) > 0 else ""
                 full_name = f"{first_name} {last_name}".strip()
+
+                # LOOKUP AREA GROUP
+                member_lookup_key = full_name.lower()
+                area_group_val = area_map.get(member_lookup_key, "N/A")
 
                 dob = row[2] if len(row) > 2 and row[2].strip() != "" else "N/A"
                 anniversary = row[3] if len(row) > 3 and row[3].strip() != "" else "N/A"
@@ -171,20 +191,18 @@ if user_name != "-- Select Name --":
                 address_for_map = row[4] if len(row) > 4 else ""
                 phone = row[5] if len(row) > 5 else "N/A"
 
-                # Check Attempt Status
                 try_1 = len(row) > 7 and row[7].upper() == 'TRUE'
                 try_2 = len(row) > 8 and row[8].upper() == 'TRUE'
 
                 with st.container(border=True):
-                    # 1. Header and Dates
+                    # Display Name and Area Group (Highlighted)
                     st.markdown(f"### 👤 {full_name}")
+                    st.markdown(f"📍 **Area-Group:** `{area_group_val}`")  # Added this line
                     st.markdown(f"🎂 **DOB:** {dob}    💍 **Married:** {anniversary}")
 
-                    # Display Last Visited only if it exists
                     if last_visited:
                         st.info(f"🕒 **Last Visited:** {last_visited}")
 
-                    # 2. Action Buttons (Phone & Maps)
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown(f"📞 [{phone}](tel:{phone.replace('-', '').replace(' ', '')})")
@@ -195,7 +213,6 @@ if user_name != "-- Select Name --":
                         else:
                             st.button("No Address Found", disabled=True, use_container_width=True)
 
-                    # 3. Progress Display
                     st.write("---")
                     if try_1 and try_2:
                         st.success("✅ **Goal Reached:** 2 of 2 attempts completed.")
@@ -204,101 +221,43 @@ if user_name != "-- Select Name --":
                     else:
                         st.warning("⚪ **Not Started:** 0 attempts completed.")
 
-                    # 4. Log Visit Section
                     with st.expander("📝 Log a Visitation Attempt"):
-                        attempt_choice = st.selectbox(
-                            "Which attempt did you complete?",
-                            options=["-- Select --", "Try #1", "Try #2"],
-                            key=f"status_{row_number}"
-                        )
-
-                        if st.button(f"Confirm attempt for {full_name}", key=f"btn_{row_number}"):
-                            if attempt_choice == "-- Select --":
-                                st.warning("Please select an attempt number.")
-                            else:
+                        attempt_choice = st.selectbox("Which attempt?", ["-- Select --", "Try #1", "Try #2"],
+                                                      key=f"status_{row_number}")
+                        if st.button(f"Confirm attempt", key=f"btn_{row_number}"):
+                            if attempt_choice != "-- Select --":
                                 client = get_sheet_client()
                                 sheet = client.open_by_key(SPREADSHEET_ID).worksheet(target_tab)
                                 col_to_update = "H" if attempt_choice == "Try #1" else "I"
+                                sheet.update_acell(f"{col_to_update}{row_number}", "TRUE")
+                                st.cache_data.clear()
+                                st.rerun()
 
-                                with st.spinner("Updating spreadsheet..."):
-                                    sheet.update_acell(f"{col_to_update}{row_number}", "TRUE")
-                                    st.success("Updated!")
-                                    st.cache_data.clear()
-                                    st.rerun()
-                    # --- NEW: SCHEDULE VISITATION SECTION ---
                     with st.expander("📅 Schedule a Future Visitation"):
-                        st.write(
-                            f"Have you been able to schedule a visitation for **{full_name}**? If so, enter the details below:")
-
                         col_d, col_t = st.columns(2)
                         with col_d:
-                            # 'format' changes how it looks in the app
-                            v_date = st.date_input(
-                                "Select Date",
-                                key=f"date_in_{row_number}",
-                                format="MM/DD/YYYY"
-                            )
+                            v_date = st.date_input("Select Date", key=f"date_in_{row_number}", format="MM/DD/YYYY")
                         with col_t:
-                            # 1. Generate a clean list of 30-minute increments
-                            time_options = []
-                            periods = ["AM", "PM"]
-                            # We'll use 12, then 1-11 to keep the standard clock order
-                            hours = [12] + list(range(1, 12))
-
-                            for period in periods:
-                                for hour in hours:
-                                    # format to 2 digits for cleaner look, e.g., "01:00 PM"
-                                    h_str = str(hour).zfill(2)
-                                    time_options.append(f"{h_str}:00 {period}")
-                                    time_options.append(f"{h_str}:30 {period}")
-
-                            # 2. Let the user pick from the list
-                            # Setting index 26 usually lands on 01:00 PM
-                            selected_time_str = st.selectbox(
-                                "Select Time",
-                                options=time_options,
-                                index=26 if len(time_options) > 26 else 0,
-                                key=f"time_select_{row_number}"
-                            )
+                            time_options = [f"{str(h).zfill(2)}:{m} {p}" for p in ["AM", "PM"] for h in
+                                            [12] + list(range(1, 12)) for m in ["00", "30"]]
+                            selected_time_str = st.selectbox("Select Time", options=time_options, index=26,
+                                                             key=f"time_select_{row_number}")
 
                         if st.button("Save Schedule", key=f"sched_btn_{row_number}"):
                             client = get_sheet_client()
-                            sheet = client.open_by_key(SPREADSHEET_ID).worksheet(
-                                target_tab)
-
-                            # Format for the Google Sheet
+                            sheet = client.open_by_key(SPREADSHEET_ID).worksheet(target_tab)
                             date_str = v_date.strftime("%m/%d/%Y")
-                            # FIX: Use the string from the selectbox directly
-                            time_str = selected_time_str
+                            sheet.update_acell(f"J{row_number}", date_str)
+                            sheet.update_acell(f"K{row_number}", selected_time_str)
 
-                            with st.spinner("Saving to spreadsheet..."):
-                                sheet.update_acell(f"J{row_number}", date_str)
-                                sheet.update_acell(f"K{row_number}", time_str)
-
-                                # --- UPDATED: NOTIFY ALL OFFICERS INDIVIDUALLY ---
-                                app_url = "https://visitation-assignment-app.streamlit.app/"
-                                officer_map = st.secrets["USER_MAP"]
-
-                                notification_msg = (
-                                    f"📅 **New Visitation Scheduled!**\n\n"
-                                    f"A visitation has been scheduled for **{full_name}** on {date_str} at {time_str}.\n\n"
-                                    f"Please click the link below to let everyone know if you can attend:\n"
-                                    f"{app_url}"
-                                )
-
-                                # This loops through every officer in your secrets and sends a DM
-                                for off_name, chat_id in officer_map.items():
-                                    try:
-                                        send_telegram_message(notification_msg, chat_id)
-                                    except Exception as e:
-                                        st.error(f"Could not notify {off_name}: {e}")
-
-                                st.success(f"Scheduled and all officers notified!")
-                                st.cache_data.clear()
-                                st.rerun()
-                        st.caption("⚠️ **FYI:** Clicking the button above will immediately notify the rest of the officers via Telegram.")
+                            officer_map = st.secrets["USER_MAP"]
+                            notification_msg = f"📅 **New Visitation!**\n\n**{full_name}** ({area_group_val}) on {date_str} at {selected_time_str}."
+                            for off_name, chat_id in officer_map.items():
+                                send_telegram_message(notification_msg, chat_id)
+                            st.cache_data.clear()
+                            st.rerun()
         else:
-            st.info("No active assignments found for you at this time.")
+            st.info("No active assignments found.")
 
     # Option 2: Scheduled Visitations
     elif menu_choice == "View Scheduled Visitations":
@@ -387,6 +346,8 @@ if user_name != "-- Select Name --":
     else:
         st.subheader("🛠️ Assign Officers (Leadership)")
 
+        area_map = get_area_group_map()
+
         all_members = [
             row for row in all_rows[4:]
             if len(row) > 19 and str(row[19]).strip().upper() == "YES"
@@ -448,6 +409,11 @@ if user_name != "-- Select Name --":
                 first_name = row[1] if len(row) > 1 else ""
                 last_name = row[0] if len(row) > 0 else ""
                 full_name = f"{first_name} {last_name}".strip()
+
+                # LOOKUP AREA GROUP
+                member_lookup_key = full_name.lower()
+                area_group_val = area_map.get(member_lookup_key, "N/A")
+
                 current_officer = row[6].strip() if len(row) > 6 else ""
                 last_visited = row[20] if len(row) > 20 and row[20].strip() != "" else None
 
@@ -455,9 +421,12 @@ if user_name != "-- Select Name --":
                     col_info, col_action = st.columns([1.5, 1])
                     with col_info:
                         st.markdown(f"### {full_name}")
+                        # ADDED: Display the Area-Group here
+                        st.markdown(f"📍 **Area-Group:** `{area_group_val}`")
+
                         if last_visited:
                             st.write(f"🕒 **Last Visited:** {last_visited}")
-                        st.caption(f"📍 Currently: **{current_officer if current_officer else 'Unassigned'}**")
+                        st.caption(f"👤 Currently: **{current_officer if current_officer else 'Unassigned'}**")
 
                     with col_action:
                         try:
