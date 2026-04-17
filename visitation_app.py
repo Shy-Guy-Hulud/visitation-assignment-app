@@ -261,88 +261,91 @@ if user_name != "-- Select Name --":
 
     # Option 2: Scheduled Visitations
     elif menu_choice == "View Scheduled Visitations":
-        st.subheader("🗓️ Upcoming Scheduled Visitations")
+        st.subheader("🗓️ Visitation Schedule")
 
-        # 1. Get today's date adjusted for your timezone
-        # If you are in Nevada (PT), UTC is often 7-8 hours ahead.
-        # This approach gets the current time and strips it to just the date.
-        today = datetime.datetime.now().date()
+        # 1. Get today's date adjusted for Pacific Time
+        # Using -7 for PDT (Pacific Daylight Time) which you are in currently (April 2026)
+        today = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=7)).date()
 
-        # 2. Filter rows where Column J (index 9) is not empty AND is NOT in the past
-        scheduled = []
+        upcoming = []
+        completed = []
+
+        # 2. Categorize the rows
         for row in all_rows[4:]:
             if len(row) > 9 and row[9].strip() != "":
                 date_str = row[9].strip()
                 try:
-                    # Convert spreadsheet string "MM/DD/YYYY" to a date object
                     visit_date_obj = datetime.datetime.strptime(date_str, "%m/%d/%Y").date()
 
-                    # ONLY include if the date is today or in the future, include items that match today
                     if visit_date_obj >= today:
-                        scheduled.append(row)
+                        upcoming.append((visit_date_obj, row))
+                    else:
+                        completed.append((visit_date_obj, row))
                 except ValueError:
-                    # This skips rows with invalid date formats so the app doesn't crash
                     continue
 
-        if not scheduled:
-            st.info("No upcoming visitations scheduled. (Past visits are hidden)")
-        else:
-            header_row = all_rows[3]
-            officer_names = [header_row[i] for i in range(11, 19)]
-            col_letters = ["L", "M", "N", "O", "P", "Q", "R", "S"]
-            officer_cols = dict(zip(officer_names, col_letters))
+        # Sort: Upcoming (Closest date first), Completed (Most recent first)
+        upcoming.sort(key=lambda x: x[0])
+        completed.sort(key=lambda x: x[0], reverse=True)
 
-            for row in scheduled:
-                row_number = all_rows.index(row) + 1
 
-                # --- DEFINE VARIABLES FIRST ---
-                first_name = row[1] if len(row) > 1 else ""
-                last_name = row[0] if len(row) > 0 else ""
-                full_name = f"{first_name} {last_name}".strip()
+        # 3. Helper function to render cards
+        def render_visitation_card(row, is_past=False):
+            row_number = all_rows.index(row) + 1
+            first_name = row[1] if len(row) > 1 else ""
+            last_name = row[0] if len(row) > 0 else ""
+            full_name = f"{first_name} {last_name}".strip()
+            address = row[4] if len(row) > 4 else "No Address"
+            visit_date = row[9]
+            visit_time = row[10] if len(row) > 10 else "TBD"
 
-                address = row[4] if len(row) > 4 else "No Address"
-                visit_date = row[9]  # Column J
-                visit_time = row[10] if len(row) > 10 else "TBD"  # Column K
+            with st.container(border=True):
+                st.markdown(f"### 👤 {full_name}")
+                st.write(f"📅 **Date:** {visit_date}    ⏰ **Time:** {visit_time}")
 
-                with st.container(border=True):
-                    st.markdown(f"### 👤 {full_name}")
+                maps_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
+                st.markdown(f"📍 **Location:** [{address}]({maps_url})")
 
-                    # Display Date and Time as plain text
-                    st.write(f"📅 **Date:** {visit_date}    ⏰ **Time:** {visit_time}")
+                # Attendance Check - Column L starts at index 11
+                attending = [all_rows[3][i] for i in range(11, 19) if len(row) > i and row[i].upper() == 'TRUE']
+                if attending:
+                    st.success(f"👥 **Attending:** {', '.join(attending)}")
 
-                    # Create the clickable Google Maps URL
-                    # We use address.replace(' ', '+') to make the URL web-safe
-                    maps_url = f"https://www.google.com/maps/search/?api=1&query={address.replace(' ', '+')}"
-
-                    # Display the address as a blue hyperlink
-                    st.markdown(f"📍 **Location:** [{address}]({maps_url})")
-
-                    # Attendance Check
-                    attending = [all_rows[3][i] for i in range(11, 19) if len(row) > i and row[i].upper() == 'TRUE']
-                    if attending:
-                        st.success(f"👥 **Attending:** {', '.join(attending)}")
-                    else:
-                        st.caption("No officers have responded yet.")
-
-                    # RSVP Section
+                if not is_past:
                     st.divider()
+                    header_row = all_rows[3]
+                    officer_names = [header_row[i] for i in range(11, 19)]
                     if user_name in officer_names:
-                        col_letter = officer_cols.get(user_name)
                         if user_name not in attending:
-
-                            st.caption(f"💡 Click the button below if you can make the visitation for **{full_name}**")
-
                             if st.button(f"🙋‍♂️ I can attend ({full_name})", key=f"rsvp_{row_number}"):
                                 client = get_sheet_client()
                                 sheet = client.open_by_key(SPREADSHEET_ID).worksheet(target_tab)
+                                # Map names to columns L through S
+                                col_map = {name: chr(76 + i) for i, name in enumerate(officer_names)}
+                                col_letter = col_map.get(user_name)
                                 sheet.update_acell(f"{col_letter}{row_number}", "TRUE")
-                                st.success("RSVP Saved!")
                                 st.cache_data.clear()
                                 st.rerun()
-                        else:
-                            st.button(f"✅ You are attending ({full_name})", disabled=True, key=f"done_{row_number}")
-                    else:
-                        st.warning("You are not listed in the attendance columns (L-S).")
+                else:
+                    st.caption("✅ This visitation date has passed.")
+
+
+        # --- DISPLAY SECTIONS ---
+        st.markdown("## 🚀 Upcoming")
+        if not upcoming:
+            st.info("No upcoming visitations scheduled.")
+        else:
+            for _, row in upcoming:
+                render_visitation_card(row, is_past=False)
+
+        st.markdown("---")
+        st.markdown("## ✅ Completed Visitations")
+        if not completed:
+            st.caption("No past visitations found for this month.")
+        else:
+            with st.expander("Show Past Visits", expanded=False):
+                for _, row in completed:
+                    render_visitation_card(row, is_past=True)
 
     # --- OPTION 3: ASSIGN OFFICERS ---
     else:
