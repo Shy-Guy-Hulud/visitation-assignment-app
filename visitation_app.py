@@ -263,8 +263,10 @@ if user_name != "-- Select Name --":
     elif menu_choice == "View Scheduled Visitations":
         st.subheader("🗓️ Upcoming Scheduled Visitations")
 
-        # 1. Get today's date for comparison
-        today = datetime.date.today()
+        # 1. Get today's date adjusted for your timezone
+        # If you are in Nevada (PT), UTC is often 7-8 hours ahead.
+        # This approach gets the current time and strips it to just the date.
+        today = datetime.datetime.now().date()
 
         # 2. Filter rows where Column J (index 9) is not empty AND is NOT in the past
         scheduled = []
@@ -275,11 +277,10 @@ if user_name != "-- Select Name --":
                     # Convert spreadsheet string "MM/DD/YYYY" to a date object
                     visit_date_obj = datetime.datetime.strptime(date_str, "%m/%d/%Y").date()
 
-                    # ONLY include if the date is today or in the future
+                    # ONLY include if the date is today or in the future, include items that match today
                     if visit_date_obj >= today:
                         scheduled.append(row)
-                except ValueError:
-                    # This skips rows with invalid date formats so the app doesn't crash
+                    except ValueError:
                     continue
 
         if not scheduled:
