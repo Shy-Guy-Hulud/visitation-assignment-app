@@ -280,7 +280,8 @@ if user_name != "-- Select Name --":
                     # ONLY include if the date is today or in the future, include items that match today
                     if visit_date_obj >= today:
                         scheduled.append(row)
-                    except ValueError:
+                except ValueError:
+                    # This skips rows with invalid date formats so the app doesn't crash
                     continue
 
         if not scheduled:
